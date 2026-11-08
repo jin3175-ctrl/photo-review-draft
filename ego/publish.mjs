@@ -37,12 +37,13 @@ function toHtml(text, spans) {
 // ⚠️profileId는 **새 공간을 만들 때만** 받는다 — 이미 있는 공간에 넘기면 오류가 난다(실측).
 //   처음엔 프로필을 지정해 만들고(데일리텐 계정), 그다음부터는 빼고 재사용한다.
 const _spaceName = P.spaceName || "체험단 자동";
-let task;
-try {
-  task = await taskSpace(_spaceName, P.profileId ? { profileId: P.profileId } : undefined);
-} catch (e) {
-  task = await taskSpace(_spaceName);
+async function _openSpace(name, profileId) {   // 프로필 공간: 처음엔 프로필로 만들고, 이미 있으면 그대로 연다
+  if (!profileId) return await taskSpace(name);
+  try { return await taskSpace(name, { profileId }); }
+  catch (e) { if (/already exists/i.test(String(e))) return await taskSpace(name); throw e; }
 }
+//   🔴프로필을 정했는데 못 열면 기본 프로필로 내려가지 않는다(다른 블로그 아이디로 쓰게 된다).
+const task = await _openSpace(_spaceName, P.profileId);
 const page = task.page("p1");
 
 // 🔴**쓴 공간은 닫는다**(2026-10-10 에디님: 「에고라이트 창이 쌓여서 팬이 계속 돈다」).

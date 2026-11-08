@@ -9,7 +9,12 @@ const P = JSON.parse(await fs.readFile(PAYLOAD_PATH, "utf-8"));
 const log = (...a) => console.log("[ego]", ...a);
 const WRITE_URL = `https://blog.naver.com/${P.blogId}?Redirect=Write&`;
 
-const task = await taskSpace(P.spaceName || "체험단 자동");
+async function _openSpace(name, profileId) {   // 프로필 공간: 처음엔 프로필로 만들고, 이미 있으면 그대로 연다
+  if (!profileId) return await taskSpace(name);
+  try { return await taskSpace(name, { profileId }); }
+  catch (e) { if (/already exists/i.test(String(e))) return await taskSpace(name); throw e; }
+}
+const task = await _openSpace(P.spaceName || "체험단 자동", P.profileId);
 const page = task.page("p1");
 let _closed = false;
 async function done(obj, code = 0) {

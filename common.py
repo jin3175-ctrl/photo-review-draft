@@ -76,12 +76,57 @@ def ego_bin() -> str:
     return ""
 
 
+# ── 에고라이트 프로필(2026-11-08) ─────────────────────────────
+#   홈판 블로그와 체험단 블로그는 네이버 아이디가 다르다. 한 프로필에서 아이디를 바꾸면
+#   다른 쪽 자동화가 멈추므로, 체험단 블로그는 에고라이트의 «다른 프로필»에 로그인해 두고
+#   내정보.txt 「에고 프로필:」에 그 프로필 이름을 적는다. 비우면 기본 프로필.
+_PROFILE_CACHE: dict = {}
+
+
+def ego_profile(b: str) -> tuple[str, str, str]:
+    """내정보 「에고 프로필」 이름 → (프로필 id, 이름, 오류문). 비어 있으면 ("", "", "")."""
+    want = myinfo().get("에고 프로필", "").strip()
+    if not want:
+        return "", "", ""
+    if want in _PROFILE_CACHE:
+        return _PROFILE_CACHE[want]
+    try:
+        p = subprocess.run([b, "nodejs", "-e", "console.log(JSON.stringify(await profiles()))"],
+                           text=True, capture_output=True, timeout=60, encoding="utf-8", errors="replace")
+        lst = []
+        for line in reversed(((p.stdout or "") + "\n" + (p.stderr or "")).splitlines()):   # 에고는 console.log를 stderr로 낸다
+            if line.strip().startswith("["):
+                lst = json.loads(line.strip())
+                break
+    except Exception as e:  # noqa: BLE001
+        return "", want, f"에고라이트 프로필 목록을 못 읽었습니다: {str(e)[:80]}"
+    norm = lambda s: re.sub(r"\s+", "", str(s or "")).lower()
+    hit = [x for x in lst if norm(x.get("name")) == norm(want) or norm(x.get("id")) == norm(want)]
+    if not hit:
+        hit = [x for x in lst if norm(want) in norm(x.get("name"))]
+    if len(hit) != 1:
+        names = ", ".join(f"「{x.get('name')}」" for x in lst) or "(없음)"
+        why = (f"에고라이트에 「{want}」 프로필이 없습니다. 지금 있는 프로필: {names} — "
+               "내정보.txt 「에고 프로필:」을 이 중 하나로 똑같이 적어 주세요.") if not hit else \
+              (f"「{want}」에 맞는 프로필이 여러 개입니다: {names} — 이름을 정확히 적어 주세요.")
+        return "", want, why
+    r = (hit[0]["id"], hit[0].get("name") or want, "")
+    _PROFILE_CACHE[want] = r
+    return r
+
+
 def run_ego(script: str, payload: dict, timeout: int = 1800, log_name: str = "ego.log") -> dict:
     """ego/<script> 를 에고라이트로 돌리고 마지막 JSON 한 줄을 돌려준다."""
     b = ego_bin()
     if not b:
         return {"ok": False, "why": "에고라이트가 없습니다 — https://lite.ego.app 에서 설치하고 앱을 한 번 열어 "
                                      "첫 화면을 끝내 주세요."}
+    pid, pname, perr = ego_profile(b)
+    if perr:
+        return {"ok": False, "why": perr}
+    if pid:   # 프로필마다 공간 이름을 따로 — 공간은 만들 때 정한 프로필을 계속 쓴다
+        payload = dict(payload, profileId=pid,
+                       spaceName=f"{payload.get('spaceName') or SPACE_NAME} · {pname}")
     os.makedirs(WORK, exist_ok=True)
     pp = os.path.join(WORK, "ego_payload.json")
     with open(pp, "w", encoding="utf-8") as f:
